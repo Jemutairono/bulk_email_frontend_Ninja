@@ -1,0 +1,17 @@
+.app-layout {
+  display: flex;
+  min-height: 100vh;
+}
+.app-layout__main {
+  flex: 1;
+  min-width: 0;
+}
+.app-layout__content {
+  padding: 24px 28px 48px;
+  max-width: 1240px;
+}
+
+@media (max-width: 860px) {
+  .app-layout { flex-direction: column; }
+  .sidebar { width: 100%; height: auto; position: relative; }
+}
