@@ -1,7 +1,13 @@
 // Quota & Alerts, User Administration, Roles & Permissions, System Status
 // (§15, §16, §21).
+//
+// User Administration is wired to the real Tmail API ("Users" and
+// "Invitations" folders). Quota, Roles & Permissions, and System Status stay
+// on mock data below — the Postman collection has no matching endpoints for
+// them, so there's nothing to integrate against yet.
 
-import { mockDelay } from './apiClient';
+import { apiClient, mockDelay } from './apiClient';
+import { roleFromIsAdmin } from './authService';
 import type {
   ManagedUser,
   Permission,
@@ -16,13 +22,6 @@ const mockQuota: QuotaMetric[] = [
   { label: 'Sends this 24h window', used: 168400, limit: 250000 },
   { label: 'Contact records', used: 214300, limit: 350000 },
   { label: 'API calls (hourly)', used: 3120, limit: 10000 },
-];
-
-const mockUsers: ManagedUser[] = [
-  { name: 'Jane Wanjiru', email: 'j.wanjiru@nca.ke', role: 'campaign_manager', status: 'granted' },
-  { name: 'Peter Kamau', email: 'p.kamau@nca.ke', role: 'auditor', status: 'granted' },
-  { name: 'System Administrator', email: 'admin@nca.ke', role: 'admin', status: 'granted' },
-  { name: 'Levy System (integration)', email: 'levy-system@nca.ke', role: 'app_integrator', status: 'pending' },
 ];
 
 export const PERMISSIONS: Permission[] = [
@@ -60,17 +59,81 @@ export async function getQuota(): Promise<QuotaMetric[]> {
   return mockDelay(mockQuota);
 }
 
-export async function listUsers(): Promise<ManagedUser[]> {
-  // TODO: return apiClient.get<ManagedUser[]>('/admin/users');
-  return mockDelay(mockUsers);
+// --- User administration: GET/PUT/DELETE /users/list/, GET /all-users/list/,
+// POST /invite-user/ (Tmail API, "Users" and "Invitations" folders). No
+// example responses were saved in the collection, so RawManagedUser and the
+// paginated envelope shape are assumed to mirror the "Update one user"
+// request body and the standard DRF `{ count, results }` pagination style
+// respectively — confirm against a live response and adjust if they differ.
+
+interface RawManagedUser {
+  id: number;
+  email: string;
+  username: string;
+  is_admin: boolean;
+  company_id: number | null;
+  phone: string | null;
 }
 
-/** §16 "User administration" — enable/disable/assign role. */
-export async function setUserRole(email: string, role: UserRole): Promise<ManagedUser> {
-  // TODO: return apiClient.patch<ManagedUser>(`/admin/users/${email}`, { role });
-  const existing = mockUsers.find((u) => u.email === email);
-  if (!existing) throw new Error(`Unknown user ${email}`);
-  return mockDelay({ ...existing, role });
+interface RawUserPage {
+  count: number;
+  results: RawManagedUser[];
+}
+
+function mapManagedUser(raw: RawManagedUser): ManagedUser {
+  return {
+    id: raw.id,
+    email: raw.email,
+    username: raw.username,
+    isAdmin: raw.is_admin,
+    companyId: raw.company_id,
+    phone: raw.phone,
+    role: roleFromIsAdmin(raw.is_admin),
+  };
+}
+
+export interface ListUsersResult {
+  users: ManagedUser[];
+  total: number;
+}
+
+/** GET /all-users/list/?limit=&offset= */
+export async function listUsers(limit = 20, offset = 0): Promise<ListUsersResult> {
+  const page = await apiClient.get<RawUserPage>(`/all-users/list/?limit=${limit}&offset=${offset}`);
+  return { users: page.results.map(mapManagedUser), total: page.count };
+}
+
+/** GET /users/list/?id= */
+export async function getUser(id: number): Promise<ManagedUser> {
+  const raw = await apiClient.get<RawManagedUser>(`/users/list/?id=${id}`);
+  return mapManagedUser(raw);
+}
+
+/** PUT /users/list/ — full-record update; send back the fields that didn't change too. */
+export async function updateUser(
+  user: Pick<ManagedUser, 'id' | 'email' | 'username' | 'isAdmin' | 'companyId' | 'phone'>
+): Promise<ManagedUser> {
+  const raw = await apiClient.put<RawManagedUser>('/users/list/', {
+    id: user.id,
+    email: user.email,
+    is_admin: user.isAdmin,
+    username: user.username,
+    company_id: user.companyId,
+    phone: user.phone,
+  });
+  return mapManagedUser(raw);
+}
+
+/** DELETE /users/list/?id= */
+export async function deleteUser(id: number): Promise<void> {
+  await apiClient.delete<void>(`/users/list/?id=${id}`);
+}
+
+/** POST /invite-user/. Note: the collection has no "list invitations"
+ * endpoint, so a pending invite can't be shown in the Users table — the
+ * old mock model's 'pending' status doesn't have a real equivalent here. */
+export async function inviteUser(email: string, companyId: number): Promise<void> {
+  await apiClient.post<void>('/invite-user/', { email, company_id: companyId });
 }
 
 export async function listRoles(): Promise<RoleDefinition[]> {

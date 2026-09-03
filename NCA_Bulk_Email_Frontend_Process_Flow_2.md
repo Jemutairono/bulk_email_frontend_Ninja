@@ -1,13 +1,7 @@
 # NCA Bulk Email as a Service — Front-End Process Flow
 
-**Scope:** Browser console only.  
-**Frontend stack assumption:** React + TypeScript.  
+ **Frontend stack assumption:** React + TypeScript.  
 **Backend/infrastructure:** Consumed through authenticated APIs; not implemented by the frontend.
-
-> **Status:** Message Log (§14), standalone Reports (§13), a Roles/Permissions matrix under
-> Administration (§16), and System Status (§21) were flagged in an earlier review as scope
-> beyond the original 12-module requirements doc. All four have since been implemented in the
-> reference build (`nca-bulk-email-frontend.zip`) and are reflected as final below.
 
 ---
 
@@ -67,37 +61,116 @@ Authenticate again
 
 ---
 
-## 2. Main Application Flow
+## 2. Templates Flow
 
 ```text
-                                    Dashboard
-                                        │
-   ┌────────────┬─────────────┬────────┴────────┬──────────────────────┐
-   ↓            ↓             ↓                 ↓                      ↓
-Campaigns    Audience      Insight         Administration
-   │            │             │                 │
-   │            │             │                 │
-Campaign     Contacts &    Analytics      Quota & Alerts
- Studio        Lists          │           User Administration
-   │            │           Reports       Roles & Permissions
-Scheduler    Consent          │           Audit Log
-   │          Centre       Message Log    System Status
-Deliverability  │
- Testing      Data
-              Hygiene
+TEMPLATES
+    ↓
+Template Library
+    ↓
+Choose operation
+    ├── Use Template
+    ├── Create Template
+    ├── Edit Template
+    ├── Duplicate Template
+    └── Preview Template
 ```
 
-This mirrors the sidebar in the reference build: five nav groups (Campaigns, Audience, Insight,
-Administration, plus Dashboard on its own) — every item is reachable directly from the sidebar,
-none require passing through another module first. Consent is grouped under Audience alongside
-Contacts, since both act on the same contact record. System Status sits under Administration but
-is visible to every role, unlike the other items in that group (see §16, §21).
+### Template Library
+
+```text
+Template Library
+   ↓
+Search / Filter / Sort
+   ↓
+Select Template
+   ├── Preview
+   ├── Edit
+   ├── Duplicate
+   ├── Use in Campaign
+   └── Delete
+```
+
+Filter/category options mirror the NCA-branded template suite: **Notices,
+Newsletters, Reminders, Campaigns**.
+
+### Create/Edit Template
+
+```text
+Create / Edit Template
+        ↓
+Template Editor
+        ↓
+Add / edit:
+   ├── Text
+   ├── Images
+   ├── Sections / blocks
+   ├── Merge fields
+   ├── Dynamic content
+   └── Conditional content
+        ↓
+Responsive / Mobile Preview
+        ↓
+Device / Email-client Preview
+        ↓
+Validate
+        ↓
+Save Template
+        ↓
+Template Library
+```
+
+### Template → Campaign
+
+```text
+Template Library
+      ↓
+Select Template
+      ↓
+Use Template
+      ↓
+Campaign Studio
+      ↓
+Customize Content
+      ↓
+Personalization
+      ↓
+Select Audience
+      ↓
+Pre-send Validation
+      ↓
+Schedule / Send
+```
+
+**Notes:**
+
+- Template design and brand-guideline approval sit with Tilil (design) and
+  NCA (approval/sign-off), per the report's RACI; the frontend surfaces the
+  approved library, it does not perform brand approval.
+- Device/email-client preview must cover the same rendering matrix used in
+  Campaign Pre-Flight (§8).
+
+---
+
+## 3. Main Application Flow
+
+```text
+                              Dashboard
+                                 ↓
+       ┌───────────────┬────────┴───────┬────────────────┬────────────────┐
+       ↓                ↓                ↓                ↓                ↓
+   Campaigns        Templates        Contacts         Analytics         Messages
+       ↓                                  ↓                ↓
+   Reports                            Consent           System Status
+       ↓                                  ↓
+ Administration                     Audit Logs
+```
 
 The user's RBAC permissions determine which modules and actions are visible.
 
 ---
 
-## 3. Dashboard Flow
+## 4. Dashboard Flow
 
 ```text
 Login
@@ -134,7 +207,7 @@ Frontend updates charts/tables
 
 ---
 
-## 4. Campaign Creation Flow
+## 5. Campaign Creation Flow
 
 ```text
 Campaigns
@@ -148,6 +221,8 @@ Campaign information
    └── Sending identity
    ↓
 Select template
+   ↓
+Template Library (see §2)
    ↓
 Campaign Studio
    ↓
@@ -174,7 +249,7 @@ Save draft
 
 ---
 
-## 5. Audience Selection Flow
+## 6. Audience Selection Flow
 
 ```text
 Campaign
@@ -202,7 +277,7 @@ Valid recipients available?
 
 ---
 
-## 6. Campaign Pre-Flight Flow
+## 7. Campaign Pre-Flight Flow
 
 ```text
 Campaign ready
@@ -235,7 +310,7 @@ validation
 
 ---
 
-## 7. Scheduling / Sending Flow
+## 8. Scheduling / Sending Flow
 
 ```text
 Validated campaign
@@ -243,11 +318,11 @@ Validated campaign
 Choose sending mode
        ↓
  ┌──────────────┬───────────────────┐
- │              │
-Send now     Schedule
- │           date/time
- │              │
- └──────────────┘
+ │              │                   │
+Send now     Schedule            Triggered
+ │           date/time             send
+ │              │                   │
+ └──────────────┴───────────────────┘
                 ↓
           Confirmation
                 ↓
@@ -260,17 +335,11 @@ Send now     Schedule
        Frontend monitors status
 ```
 
-**Triggered sends are not a manual choice in this screen.** A triggered send originates from an
-external NCA application calling the platform's API directly (e.g. a registration system firing
-a welcome email) — the console never asks a user to pick "Triggered" as a sending mode. Triggered
-campaigns still appear in Campaign Monitoring (§8) and Message Log (§14) once the API accepts
-them, using the same status states as a manually sent campaign.
-
 **Important:** The React frontend submits the campaign to the backend. It does not directly send email.
 
 ---
 
-## 8. Campaign Monitoring Flow
+## 9. Campaign Monitoring Flow
 
 ```text
 Campaign = Queued
@@ -308,7 +377,7 @@ Campaign Details
 
 ---
 
-## 9. Contact Management Flow
+## 10. Contact Management Flow
 
 ```text
 Contacts
@@ -356,7 +425,7 @@ Import result
 
 ---
 
-## 10. Contact Details Flow
+## 11. Contact Details Flow
 
 ```text
 Contacts
@@ -377,7 +446,7 @@ Contact Profile
 
 ---
 
-## 11. Consent / Preference Flow
+## 12. Consent / Preference Flow
 
 ```text
 Contact
@@ -417,7 +486,7 @@ Frontend updates status
 
 ---
 
-## 12. Analytics Flow
+## 13. Analytics Flow
 
 ```text
 Analytics
@@ -460,7 +529,7 @@ Comparison view
 
 ---
 
-## 13. Reporting Flow
+## 14. Reporting Flow
 
 ```text
 Reports
@@ -485,7 +554,7 @@ Display results
 
 ---
 
-## 14. Message Log Flow
+## 15. Message Log Flow
 
 ```text
 Messages
@@ -525,7 +594,7 @@ Possible remediation/investigation
 
 ---
 
-## 15. Quota Flow
+## 16. Quota Flow
 
 ```text
 Dashboard / Quota
@@ -544,21 +613,17 @@ The platform provides the actual quota thresholds and alerts; the frontend displ
 
 ---
 
-## 16. Administration Flow
+## 17. Administration Flow
 
 ```text
 Administration
     ↓
 Choose:
-    ├── Quota & Alerts
     ├── Users
     ├── Roles/Permissions
-    ├── Audit Log
-    └── System Status
+    ├── Quotas
+    └── System Settings
 ```
-
-*System Settings (general tenant configuration) is not yet implemented in the reference build —
-drop it from this list or scope it separately before building against it.*
 
 ### User administration
 
@@ -594,7 +659,7 @@ Save
 
 ---
 
-## 17. Audit Log Flow
+## 18. Audit Log Flow
 
 ```text
 Audit Logs
@@ -617,29 +682,7 @@ Download/export
 
 ---
 
-## 21. System Status Flow
-
-(*Added — referenced from §2 but not previously defined.*)
-
-```text
-System Status
-   ↓
-Fetch platform health from API
-   ↓
-Display:
-   ├── Sending service status (operational / degraded / down)
-   ├── API status
-   ├── Queue depth / send latency
-   └── Last incident (if any)
-```
-
-This is a read-only view for operators — it surfaces backend health signals the API already
-tracks (per the inception report's monitoring requirements) rather than computing anything
-client-side.
-
----
-
-## 18. Global Frontend State Flow
+## 19. Global Frontend State Flow
 
 Most frontend operations follow the same basic pattern:
 
@@ -679,7 +722,7 @@ Retry / Correct / Cancel
 
 ---
 
-## 19. Complete End-to-End Flow
+## 20. Complete End-to-End Flow
 
 ```text
 LOGIN
@@ -695,6 +738,8 @@ Choose operation
   ├── CAMPAIGN
   │      ↓
   │   Create/Edit
+  │      ↓
+  │   Select Template (Template Library)
   │      ↓
   │   Select Audience
   │      ↓
@@ -715,6 +760,16 @@ Choose operation
   │   Monitor Events
   │      ↓
   │   Campaign Analytics
+  │
+  ├── TEMPLATES
+  │      ↓
+  │   Use / Create / Edit
+  │      ↓
+  │   Merge Fields / Dynamic Blocks
+  │      ↓
+  │   Responsive Preview
+  │      ↓
+  │   Save to Template Library
   │
   ├── CONTACTS
   │      ↓
@@ -750,24 +805,18 @@ Choose operation
   │
   ├── ADMINISTRATION
   │      ↓
-  │   Quota & Alerts / Users / Roles & Permissions
+  │   Users / Roles / Quotas / Settings
   │
-  ├── AUDIT
-  │      ↓
-  │   Search / Filter
-  │      ↓
-  │   View / Download
-  │
-  └── SYSTEM STATUS
+  └── AUDIT
          ↓
-      Service health
+      Search / Filter
          ↓
-      Recent incidents
+      View / Download
 ```
 
 ---
 
-## 20. Core Frontend Loop
+## 21. Core Frontend Loop
 
 ```text
 Authenticate

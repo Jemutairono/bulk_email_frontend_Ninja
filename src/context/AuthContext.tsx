@@ -5,21 +5,28 @@ import {
   AuthError,
   invalidateSession,
   isSessionValid,
-  submitCredentials as submitCredentialsRequest,
-  verifyMfaCode as verifyMfaCodeRequest,
+  loginWithPassword as loginWithPasswordRequest,
+  requestOtp as requestOtpRequest,
+  verifyOtp as verifyOtpRequest,
 } from '../services/authService';
-import type { Credentials } from '../services/authService';
 import { SESSION_TIMEOUT_MS } from '../config/constants';
 import type { AuthUser, UserRole } from '../types';
 
+export type LoginMethod = 'password' | 'otp';
+
 interface AuthContextValue {
   user: AuthUser | null;
-  /** Set once §1's credentials step succeeds and MFA is pending. */
-  awaitingMfa: boolean;
+  /** Which login flow the person on the Login screen has selected. The API
+   * doesn't advertise which a given account needs, so this is a manual choice. */
+  loginMethod: LoginMethod;
+  setLoginMethod: (method: LoginMethod) => void;
+  /** True once an OTP has been requested and we're waiting on the code. */
+  awaitingOtp: boolean;
   authError: string | null;
-  submitCredentials: (credentials: Credentials) => Promise<void>;
-  verifyMfaCode: (code: string) => Promise<void>;
-  cancelMfa: () => void;
+  loginWithPassword: (email: string, password: string) => Promise<void>;
+  requestOtp: (email: string, password: string) => Promise<void>;
+  verifyOtp: (code: string) => Promise<void>;
+  cancelOtp: () => void;
   logout: () => void;
   hasRole: (...roles: UserRole[]) => boolean;
   sessionExpiresInMs: number;
@@ -29,7 +36,8 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [pendingAuth, setPendingAuth] = useState<Credentials | null>(null);
+  const [loginMethod, setLoginMethod] = useState<LoginMethod>('password');
+  const [pendingUserId, setPendingUserId] = useState<number | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<number>(0);
   const timerRef = useRef<number | null>(null);
@@ -41,44 +49,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     invalidateSession();
     setUser(null);
-    setPendingAuth(null);
+    setPendingUserId(null);
     setExpiresAt(0);
   }, []);
 
-  // §1 "Authentication failure" → display error, allow retry.
-  const submitCredentials = useCallback(async (credentials: Credentials) => {
+  const loginWithPassword = useCallback(
+    async (email: string, password: string) => {
+      setAuthError(null);
+      try {
+        const authUser = await loginWithPasswordRequest(email, password);
+        setUser(authUser);
+        resetTimer();
+      } catch (err) {
+        setAuthError(err instanceof AuthError ? err.message : 'Unable to sign in. Please try again.');
+        throw err;
+      }
+    },
+    [resetTimer]
+  );
+
+  const requestOtp = useCallback(async (email: string, password: string) => {
     setAuthError(null);
     try {
-      const result = await submitCredentialsRequest(credentials);
-      setPendingAuth(result.mfaRequired ? credentials : null);
-      if (!result.mfaRequired) {
-        // Backend may skip MFA for some flows; not exercised by the mock.
-      }
+      const { userId } = await requestOtpRequest(email, password);
+      setPendingUserId(userId);
     } catch (err) {
       setAuthError(err instanceof AuthError ? err.message : 'Unable to sign in. Please try again.');
       throw err;
     }
   }, []);
 
-  const verifyMfaCode = useCallback(
+  const verifyOtp = useCallback(
     async (code: string) => {
-      if (!pendingAuth) return;
+      if (pendingUserId == null) return;
       setAuthError(null);
       try {
-        const authUser = await verifyMfaCodeRequest(pendingAuth, code);
+        const authUser = await verifyOtpRequest(pendingUserId, code);
         setUser(authUser);
-        setPendingAuth(null);
+        setPendingUserId(null);
         resetTimer();
       } catch (err) {
         setAuthError(err instanceof AuthError ? err.message : 'Verification failed. Please try again.');
         throw err;
       }
     },
-    [pendingAuth, resetTimer]
+    [pendingUserId, resetTimer]
   );
 
-  const cancelMfa = useCallback(() => {
-    setPendingAuth(null);
+  const cancelOtp = useCallback(() => {
+    setPendingUserId(null);
     setAuthError(null);
   }, []);
 
@@ -117,11 +136,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider
       value={{
         user,
-        awaitingMfa: !!pendingAuth,
+        loginMethod,
+        setLoginMethod,
+        awaitingOtp: pendingUserId != null,
         authError,
-        submitCredentials,
-        verifyMfaCode,
-        cancelMfa,
+        loginWithPassword,
+        requestOtp,
+        verifyOtp,
+        cancelOtp,
         logout,
         hasRole,
         sessionExpiresInMs,

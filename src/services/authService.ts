@@ -1,62 +1,179 @@
-// Login, MFA verification and session validity checks (§1 Authentication Flow).
+// Login (password or OTP), token refresh, and session teardown against the
+// Tmail Django API (see "Tmail API" Postman collection — Authentication and
+// Current User folders).
 //
-// This is a demo/mock implementation: `submitCredentials` accepts any
-// non-empty email/password and always requires MFA; `verifyMfaCode` accepts
-// any 6-digit code. Swap the two `mockDelay(...)` bodies for
-// `apiClient.post(...)` calls once the backend is connected — the function
-// signatures already match the shape the real endpoints are expected to take.
+// The API exposes two independent login flows and gives no signal ahead of
+// time about which a given account requires, so the person signing in picks:
+//   - Password: POST /token/            { email, password } -> tokens
+//   - OTP:      POST /login/otp/        { email, password } -> requests a code
+//               POST /login/verify-otp/ { user_id, otp }     -> tokens
+//
+// ASSUMPTIONS (no example responses were saved in the collection — confirm
+// against a live server and adjust the Raw* interfaces below if they differ):
+//   - Token responses look like { access, refresh } (standard SimpleJWT shape).
+//   - POST /login/otp/ returns the account's numeric id as `user_id`, since
+//     that's the field POST /login/verify-otp/ expects back.
+//   - GET /me/ returns id/email/username/is_admin/company_id/phone, mirroring
+//     the fields used in the collection's "Update one user" request body.
+//
+// NOTE ON ROLE: this API only exposes an `is_admin` boolean, not the four-way
+// UserRole (admin / campaign_manager / auditor / app_integrator) the rest of
+// this app's RBAC assumes. Until a real roles endpoint exists, is_admin=true
+// maps to 'admin' and everyone else maps to 'campaign_manager' as a
+// placeholder — auditor/app_integrator can't be derived from this API alone.
+//
+// NOTE ON REFRESH: the collection has a second entry named "Obtain tokens
+// (via /token/refresh/ route)" whose body is email/password rather than a
+// refresh token — that looks like a copy/paste artifact rather than a real
+// endpoint, so it's not used here. refreshSession() instead uses POST
+// /login/ with { refresh }, matching that request's actual body. Confirm
+// this with the backend team if it turns out not to accept a bare refresh
+// token.
 
-import { mockDelay, setAuthToken } from './apiClient';
-import type { AuthUser, UserRole } from '../types';
-
-export interface Credentials {
-  email: string;
-  password: string;
-  /** Role picker only exists in this demo build in place of a real backend
-   * assigning RBAC roles server-side; drop this field once connected. */
-  role: UserRole;
-}
-
-export interface CredentialsResult {
-  /** Opaque handle passed to verifyMfaCode; a real backend would return a
-   * short-lived pending-auth token instead of echoing the credentials. */
-  pendingAuth: Credentials;
-  mfaRequired: boolean;
-}
+import { apiClient, setAuthToken } from './apiClient';
+import type { AuthUser } from '../types';
 
 export class AuthError extends Error {}
 
-/** Step 1 of §1: username/email + password. */
-export async function submitCredentials(credentials: Credentials): Promise<CredentialsResult> {
-  if (!credentials.email.trim() || !credentials.password.trim()) {
-    throw new AuthError('Enter your work email and password to continue.');
-  }
-  // TODO: return apiClient.post<CredentialsResult>('/auth/login', credentials);
-  return mockDelay({ pendingAuth: credentials, mfaRequired: true });
+interface TokenPair {
+  access: string;
+  refresh: string;
 }
 
-/** Step 2 of §1: MFA code, then "load user profile + RBAC permissions". */
-export async function verifyMfaCode(pendingAuth: Credentials, code: string): Promise<AuthUser> {
-  if (!/^\d{6}$/.test(code)) {
+interface RawUser {
+  id: number;
+  email: string;
+  username: string;
+  is_admin: boolean;
+  company_id?: number | null;
+  phone?: string | null;
+}
+
+// Kept in memory only (not localStorage) so a page reload requires a fresh
+// login rather than persisting a refresh token client-side.
+let refreshToken: string | null = null;
+
+/** Shared with adminService.ts, which maps ManagedUser records the same way. */
+export function roleFromIsAdmin(isAdmin: boolean): AuthUser['role'] {
+  return isAdmin ? 'admin' : 'campaign_manager';
+}
+
+function mapUser(raw: RawUser): AuthUser {
+  return {
+    id: String(raw.id),
+    name: raw.username,
+    email: raw.email,
+    role: roleFromIsAdmin(raw.is_admin),
+    mfaVerified: true, // reaching this point means whichever login flow was used already completed.
+  };
+}
+
+async function fetchCurrentUser(): Promise<AuthUser> {
+  const raw = await apiClient.get<RawUser>('/me/');
+  return mapUser(raw);
+}
+
+function applyTokens(tokens: TokenPair): void {
+  setAuthToken(tokens.access);
+  refreshToken = tokens.refresh;
+}
+
+/** Password flow, single step: POST /token/. */
+export async function loginWithPassword(email: string, password: string): Promise<AuthUser> {
+  if (!email.trim() || !password.trim()) {
+    throw new AuthError('Enter your work email and password to continue.');
+  }
+  let tokens: TokenPair;
+  try {
+    tokens = await apiClient.post<TokenPair>('/token/', { email, password });
+  } catch {
+    throw new AuthError('Invalid email or password.');
+  }
+  applyTokens(tokens);
+  return fetchCurrentUser();
+}
+
+/** OTP flow, step 1: request a code. Returns the id needed for step 2. */
+export async function requestOtp(email: string, password: string): Promise<{ userId: number }> {
+  if (!email.trim() || !password.trim()) {
+    throw new AuthError('Enter your work email and password to continue.');
+  }
+  try {
+    const res = await apiClient.post<{ user_id: number }>('/login/otp/', { email, password });
+    return { userId: res.user_id };
+  } catch {
+    throw new AuthError('Invalid email or password.');
+  }
+}
+
+/** OTP flow, step 2: verify the code and obtain tokens. */
+export async function verifyOtp(userId: number, otp: string): Promise<AuthUser> {
+  if (!/^\d{6}$/.test(otp)) {
     throw new AuthError('Enter the 6-digit code sent to your registered device.');
   }
-  // TODO: return apiClient.post<AuthUser>('/auth/mfa/verify', { ...pendingAuth, code });
-  const user: AuthUser = {
-    id: crypto.randomUUID(),
-    name: pendingAuth.email.split('@')[0],
-    email: pendingAuth.email,
-    role: pendingAuth.role,
-    mfaVerified: true,
-  };
-  setAuthToken(`mock-token-${user.id}`);
-  return mockDelay(user);
+  let tokens: TokenPair;
+  try {
+    tokens = await apiClient.post<TokenPair>('/login/verify-otp/', { user_id: userId, otp });
+  } catch {
+    throw new AuthError('That code is incorrect or has expired.');
+  }
+  applyTokens(tokens);
+  return fetchCurrentUser();
+}
+
+/** Silent session renewal via POST /login/ — see NOTE ON REFRESH above. */
+export async function refreshSession(): Promise<AuthUser> {
+  if (!refreshToken) throw new AuthError('No active session to refresh.');
+  const tokens = await apiClient.post<TokenPair>('/login/', { refresh: refreshToken });
+  applyTokens(tokens);
+  return fetchCurrentUser();
 }
 
 export function invalidateSession(): void {
   setAuthToken(null);
+  refreshToken = null;
 }
 
-/** §1 "Check session validity" — true while the session clock hasn't lapsed. */
+/** Password Reset, step 1: POST /password-reset-request/. Unauthenticated
+ * (noauth) per the collection. Always resolves — the API shouldn't reveal
+ * whether an address exists, so the UI shows the same confirmation either
+ * way. */
+export async function requestPasswordReset(email: string): Promise<void> {
+  if (!email.trim()) throw new AuthError('Enter your work email to continue.');
+  await apiClient.post<void>('/password-reset-request/', { email: email.trim() });
+}
+
+/** Password Reset, step 2: POST /password-reset/:token/. Unauthenticated. */
+export async function setNewPassword(token: string, newPassword: string): Promise<void> {
+  if (newPassword.length < 8) {
+    throw new AuthError('Choose a password with at least 8 characters.');
+  }
+  try {
+    await apiClient.post<void>(`/password-reset/${encodeURIComponent(token)}/`, {
+      new_password: newPassword,
+    });
+  } catch {
+    throw new AuthError('This reset link is invalid or has expired. Request a new one.');
+  }
+}
+
+/** Invitations, accept step: POST /accept-invitation/:token/. Unauthenticated
+ * (noauth) per the collection — the token itself is the credential. The
+ * "Invite a user" step (adminService.inviteUser) is what creates this link;
+ * there's no "list invitations" endpoint, so a pending invite only becomes
+ * visible once accepted and the account shows up in /all-users/list/. */
+export async function acceptInvitation(token: string, password: string): Promise<void> {
+  if (password.length < 8) {
+    throw new AuthError('Choose a password with at least 8 characters.');
+  }
+  try {
+    await apiClient.post<void>(`/accept-invitation/${encodeURIComponent(token)}/`, { password });
+  } catch {
+    throw new AuthError('This invitation link is invalid or has expired. Ask an administrator to resend it.');
+  }
+}
+
+/** Kept for compatibility with the session-timeout UI in AuthContext. */
 export function isSessionValid(expiresAt: number): boolean {
   return Date.now() < expiresAt;
 }

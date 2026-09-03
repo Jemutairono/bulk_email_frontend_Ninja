@@ -1,14 +1,9 @@
 // Campaign Studio, Scheduler and Deliverability Testing (§4, §6, §7, §8).
+// Template selection now lives in templateService.ts / the Template Library
+// (§2) — CampaignStudio.tsx pulls from there instead of a fixed list.
 
 import { mockDelay } from './apiClient';
 import type { Campaign, CampaignDraft, DeliverabilityCheck } from '../types';
-
-export const CAMPAIGN_TEMPLATES = [
-  'NCA Public Notice',
-  'Licence Reminder',
-  'Newsletter — Two Column',
-  'Plain Text Advisory',
-];
 
 const mockCampaigns: Campaign[] = [
   { id: 'cm1', name: 'Licence Renewal Reminder — Q3', subject: 'Your NCA licence renewal is due', status: 'sent', recipients: 84210, openRate: 41.2, clickRate: 9.8, bounceRate: 0.6 },

@@ -28,6 +28,10 @@ const GROUPS: NavGroup[] = [
     ],
   },
   {
+    label: 'Templates',
+    items: [{ to: '/templates', label: 'Template Library', roles: ['admin', 'campaign_manager'] }],
+  },
+  {
     label: 'Audience',
     items: [
       { to: '/contacts', label: 'Contacts & Lists', roles: ['admin', 'campaign_manager'] },
@@ -48,6 +52,9 @@ const GROUPS: NavGroup[] = [
     items: [
       { to: '/quota', label: 'Quota & Alerts' },
       { to: '/users', label: 'User Administration', roles: ['admin'] },
+      { to: '/companies', label: 'Companies', roles: ['admin'] },
+      { to: '/wallets', label: 'Wallets', roles: ['admin'] },
+      { to: '/request-logs', label: 'Request Logs', roles: ['admin', 'auditor'] },
       { to: '/roles', label: 'Roles & Permissions', roles: ['admin'] },
       { to: '/audit', label: 'Audit Log', roles: ['admin', 'auditor'] },
       { to: '/status', label: 'System Status' },
