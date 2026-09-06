@@ -53,7 +53,7 @@ export function Login() {
       <div className="login__card">
         <span className="login__brand-mark">NCA</span>
         <h1 className="login__title">Bulk Email Console</h1>
-        <p className="login__sub">Ninja Cats Association — mail.nca.ke</p>
+        <p className="login__sub">Ninja Construction Authority — mail.nca.ke</p>
 
         {!awaitingOtp ? (
           <form onSubmit={handleCredentialsSubmit}>

@@ -36,16 +36,51 @@ export class ApiError extends Error {
 }
 
 let authToken: string | null = null;
+let refreshTokenValue: string | null = null;
 
-// Called by authService after login/MFA succeed, and on logout.
-export function setAuthToken(token: string | null): void {
-  authToken = token;
+interface TokenPair {
+  access: string;
+  refresh: string;
 }
 
-// Fired when a request comes back 401 so AuthContext can force a re-login without every call site needing to know about session state.
+// Called by authService after login/OTP verification succeed, and on logout
+// (pass null to clear both tokens).
+export function setTokens(tokens: TokenPair | null): void {
+  authToken = tokens?.access ?? null;
+  refreshTokenValue = tokens?.refresh ?? null;
+}
+
+// Fired only when a session truly can't be salvaged (no refresh token, or the
+// refresh attempt itself failed) so AuthContext can force a re-login without
+// every call site needing to know about session state.
 const SESSION_EXPIRED_EVENT = 'nca:session-expired';
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+// De-dupes concurrent refreshes: if several requests 401 around the same
+// moment, only one call to /login/ goes out and the rest wait on it.
+let refreshInFlight: Promise<TokenPair> | null = null;
+
+async function refreshAccessToken(): Promise<TokenPair> {
+  if (!refreshTokenValue) throw new ApiError('No refresh token available', 401);
+  if (!refreshInFlight) {
+    refreshInFlight = fetch(`${API_BASE_URL}/login/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh: refreshTokenValue }),
+    })
+      .then(async (res) => {
+        if (!res.ok) throw new ApiError('Refresh failed', res.status);
+        return (await res.json()) as TokenPair;
+      })
+      .finally(() => {
+        refreshInFlight = null;
+      });
+  }
+  const tokens = await refreshInFlight;
+  setTokens(tokens);
+  return tokens;
+}
+
+async function request<T>(path: string, options: RequestInit = {}, isRetry = false): Promise<T> {
   const headers = new Headers(options.headers);
   headers.set('Content-Type', 'application/json');
   if (authToken) headers.set('Authorization', `Bearer ${authToken}`);
@@ -53,7 +88,18 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
 
   if (response.status === 401) {
-    setAuthToken(null);
+    // Try one silent refresh-and-retry before giving up. Skipped on an
+    // already-retried request (avoids infinite loops) and when there's no
+    // refresh token to try (e.g. never logged in, or already logged out).
+    if (!isRetry && refreshTokenValue) {
+      try {
+        await refreshAccessToken();
+        return request<T>(path, options, true);
+      } catch {
+        // Refresh itself failed — fall through to the session-expired path below.
+      }
+    }
+    setTokens(null);
     window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
     throw new ApiError('Session expired', 401);
   }

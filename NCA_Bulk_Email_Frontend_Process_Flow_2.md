@@ -5,6 +5,9 @@
 
 ---
 
+> note:
+> fix authService for admin, campaign_manager,auditor, application integrator
+
 ## 1. Authentication Flow
 
 ```text

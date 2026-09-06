@@ -30,7 +30,7 @@ let mockTemplates: EmailTemplate[] = [
     name: 'NCA Public Notice',
     category: 'Notices',
     updatedAt: '2026-08-20T09:00:00+03:00',
-    subjectPreview: 'Public notice from the National Construction Authority',
+    subjectPreview: 'Public notice from the Ninja Construction Authority',
     bodyPreview: 'Dear {{first_name}}, this is a public notice regarding {{notice_subject}}...',
     mergeFields: ['{{first_name}}', '{{notice_subject}}'],
   },

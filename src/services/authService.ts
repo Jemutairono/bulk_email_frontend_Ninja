@@ -22,15 +22,15 @@
 // maps to 'admin' and everyone else maps to 'campaign_manager' as a
 // placeholder — auditor/app_integrator can't be derived from this API alone.
 //
-// NOTE ON REFRESH: the collection has a second entry named "Obtain tokens
-// (via /token/refresh/ route)" whose body is email/password rather than a
-// refresh token — that looks like a copy/paste artifact rather than a real
-// endpoint, so it's not used here. refreshSession() instead uses POST
-// /login/ with { refresh }, matching that request's actual body. Confirm
-// this with the backend team if it turns out not to accept a bare refresh
-// token.
+// NOTE ON REFRESH: apiClient.ts now handles token refresh centrally — any
+// request that comes back 401 is silently retried once after a refresh via
+// POST /login/ (the collection's /token/refresh/ entry sends an
+// email/password body rather than a refresh token, which looks like a
+// copy/paste artifact rather than a real endpoint, so it's not used).
+// refreshSession() below is just a manual trigger for that same mechanism,
+// kept in case some call site wants to force-validate a session explicitly.
 
-import { apiClient, setAuthToken } from './apiClient';
+import { apiClient, setTokens } from './apiClient';
 import type { AuthUser } from '../types';
 
 export class AuthError extends Error {}
@@ -48,10 +48,6 @@ interface RawUser {
   company_id?: number | null;
   phone?: string | null;
 }
-
-// Kept in memory only (not localStorage) so a page reload requires a fresh
-// login rather than persisting a refresh token client-side.
-let refreshToken: string | null = null;
 
 /** Shared with adminService.ts, which maps ManagedUser records the same way. */
 export function roleFromIsAdmin(isAdmin: boolean): AuthUser['role'] {
@@ -73,11 +69,6 @@ async function fetchCurrentUser(): Promise<AuthUser> {
   return mapUser(raw);
 }
 
-function applyTokens(tokens: TokenPair): void {
-  setAuthToken(tokens.access);
-  refreshToken = tokens.refresh;
-}
-
 /** Password flow, single step: POST /token/. */
 export async function loginWithPassword(email: string, password: string): Promise<AuthUser> {
   if (!email.trim() || !password.trim()) {
@@ -89,7 +80,7 @@ export async function loginWithPassword(email: string, password: string): Promis
   } catch {
     throw new AuthError('Invalid email or password.');
   }
-  applyTokens(tokens);
+  setTokens(tokens);
   return fetchCurrentUser();
 }
 
@@ -117,21 +108,20 @@ export async function verifyOtp(userId: number, otp: string): Promise<AuthUser> 
   } catch {
     throw new AuthError('That code is incorrect or has expired.');
   }
-  applyTokens(tokens);
+  setTokens(tokens);
   return fetchCurrentUser();
 }
 
-/** Silent session renewal via POST /login/ — see NOTE ON REFRESH above. */
+/** Manual session re-validation. apiClient already retries a 401 with a
+ * fresh access token automatically (see NOTE ON REFRESH above); this just
+ * re-fetches /me/, which triggers that same mechanism if the access token
+ * has actually expired. */
 export async function refreshSession(): Promise<AuthUser> {
-  if (!refreshToken) throw new AuthError('No active session to refresh.');
-  const tokens = await apiClient.post<TokenPair>('/login/', { refresh: refreshToken });
-  applyTokens(tokens);
   return fetchCurrentUser();
 }
 
 export function invalidateSession(): void {
-  setAuthToken(null);
-  refreshToken = null;
+  setTokens(null);
 }
 
 /** Password Reset, step 1: POST /password-reset-request/. Unauthenticated
