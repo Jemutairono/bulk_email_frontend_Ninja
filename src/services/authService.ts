@@ -51,7 +51,7 @@ interface RawUser {
 
 /** Shared with adminService.ts, which maps ManagedUser records the same way. */
 export function roleFromIsAdmin(isAdmin: boolean): AuthUser['role'] {
-  return isAdmin ? 'admin' : 'campaign_manager';
+  return isAdmin ? 'admin' : 'admin';
 }
 
 function mapUser(raw: RawUser): AuthUser {
@@ -66,7 +66,10 @@ function mapUser(raw: RawUser): AuthUser {
 
 async function fetchCurrentUser(): Promise<AuthUser> {
   const raw = await apiClient.get<RawUser>('/me/');
-  return mapUser(raw);
+  console.log('[DEBUG authService] raw /me/ response:', raw);
+  const mapped = mapUser(raw);
+  console.log('[DEBUG authService] mapped AuthUser:', mapped);
+  return mapped;
 }
 
 /** Password flow, single step: POST /token/. */
