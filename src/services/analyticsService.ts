@@ -3,7 +3,7 @@
 // service (rather than reusing campaignService directly from features/) so
 // dashboard/analytics-specific aggregation logic has one home.
 
-import { listCampaigns } from './campaignService';
+import { listCampaigns } from './campaignservice';
 import type { Campaign } from '../types';
 
 export interface DashboardSummary {

@@ -58,6 +58,7 @@ export interface ManagedUser {
   isAdmin: boolean;
   companyId: number | null;
   phone: string | null;
+  fullName?: string | null;
   /** Derived, not sent by the API: 'admin' if isAdmin else 'user'. */
   role: UserRole;
 }

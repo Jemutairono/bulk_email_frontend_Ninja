@@ -14,7 +14,7 @@ import {
   type CampaignHistoryEntry,
   type CampaignHistorySummary,
   type CampaignEmailEntry,
-} from '../../services/campaignService';
+} from '../../services/campaignservice';
 import { getTemplate, listTemplates } from '../../services/templateService';
 import {
   getContactCountForGroup,

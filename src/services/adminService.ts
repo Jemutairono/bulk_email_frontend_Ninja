@@ -119,19 +119,19 @@ export async function getUser(id: number): Promise<ManagedUser> {
 
 /** PUT /users/list/ — full-record update; send back the fields that didn't change too. */
 export async function updateUser(
-  user: Pick<ManagedUser, 'id' | 'email' | 'username' | 'isAdmin' | 'companyId' | 'phone'>
+  user: Pick<ManagedUser, 'id' | 'email' | 'username' | 'isAdmin' | 'companyId' | 'phone' | 'fullName'>
 ): Promise<ManagedUser> {
-  const raw = await apiClient.put<RawManagedUser>('/users/list/', {
+  const raw = await apiClient.put<RawManagedUser>(`/users/list/?id=${user.id}`, {
     id: user.id,
     email: user.email,
     is_admin: user.isAdmin,
     username: user.username,
     company_id: user.companyId,
     phone: user.phone,
+    full_name: user.fullName,
   });
   return mapManagedUser(raw);
 }
-
 /** DELETE /users/list/?id= */
 export async function deleteUser(id: number): Promise<void> {
   await apiClient.delete<void>(`/users/list/?id=${id}`);
