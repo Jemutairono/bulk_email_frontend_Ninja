@@ -20,9 +20,12 @@ export interface TemplateDraft {
   subjectPreview: string;
   bodyPreview: string;
   mergeFields: string[];
+<<<<<<< HEAD
   /** Unlayer's design schema, present only when the template was built (or
    * last edited) with the drag-and-drop builder rather than the plain
    * textarea. Sent to TMail as the `json_data` form field. */
+=======
+>>>>>>> 0375480d0aab74a155375c89f222e666125d8781
   designJson?: Record<string, unknown>;
   /** Files picked via the upload button, sent as TMail's `files` (create) /
    * `attachments` (edit) form field. Not persisted in EmailTemplate — once

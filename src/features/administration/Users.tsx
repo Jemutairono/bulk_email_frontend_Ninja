@@ -441,7 +441,7 @@ export function Users() {
   return (
     <div>
       <p className="section-intro">
-        Set each account to either Admin or User, and invite new users to a company. Every account
+        Enable or disable administrator access, and invite new users to a company. Every account
         is personal — shared logins are not permitted.
       </p>
 
